@@ -47,6 +47,7 @@ PHP 需要 8.1+、OpenSSL、cURL 或 `allow_url_fopen`，以及程序目录写�
 - [使用说明](docs/usage.md)：面向使用者，不需要开发环境。
 - [技术说明](docs/technical.md)：签发流程、存储、验证边界和依赖选型。
 - [开发说明](docs/development.md)：构建、测试、目录结构和版本发布。
+- [维护交接](docs/maintenance.md)：已确认的产品约定、开发基线与验证证据。
 - [贡献说明](contributing.md)：提交问题和代码修改。
 - [安全说明](security.md)：运行数据与漏洞报告。
 - [版本记录](changelog.md)：每个版本的变化。
