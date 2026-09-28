@@ -1,3 +1,5 @@
+<p><img src="../assets/logo.svg" alt="Free SSL Logo" width="64" height="64"></p>
+
 # 技术说明
 
 ## 目标与基本方案

@@ -1,3 +1,5 @@
+<p><img src="../assets/logo.svg" alt="Free SSL Logo" width="64" height="64"></p>
+
 # 开发说明
 
 ## 环境
@@ -10,7 +12,7 @@ npm run pack:install
 npm run check
 ```
 
-构建生成仓库根目录的 `freessl.html`、`freessl.php`，以及 `dist/freessl.zip`。安装包中的 `readme.md` 来自 `docs/usage.md`，不会包含仓库首页或技术文档。
+构建生成仓库根目录的 `freessl.html`、`freessl.php`，以及 `dist/freessl.zip`。安装包中的 `readme.md` 来自 `docs/usage.md`，不会包含仓库首页或技术文档。说明中的 Logo 使用本仓库的公开图片地址；网页里的 Logo 和浏览器图标仍内嵌在 HTML 中，安装时不需要另传图片文件。
 
 ## 目录
 
@@ -22,6 +24,7 @@ npm run check
 | `src/local.js` | 密码加密的浏览器记录 |
 | `src/helper.php` | PHP 登录、保存、申请和续期 |
 | `vendor/` | 固定版本的上游源码和许可证 |
+| `assets/logo.svg`、`assets/favicon.svg` | 从网页标识提取的 Logo 与浏览器图标，供仓库文档使用 |
 | `tests/` | 浏览器密码学、真实 PHP 和安装包检查 |
 | `docs/usage.md` | 安装包使用说明的唯一来源 |
 | `docs/technical.md` | 技术方案与依赖记录 |

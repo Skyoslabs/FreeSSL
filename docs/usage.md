@@ -1,3 +1,5 @@
+<p><img src="https://raw.githubusercontent.com/Skyoslabs/FreeSSL/main/assets/logo.svg" alt="Free SSL Logo" width="64" height="64"></p>
+
 # Free SSL 使用说明
 
 适用于 v1.0.0。

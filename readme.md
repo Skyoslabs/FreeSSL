@@ -1,4 +1,8 @@
-# Free SSL
+<p align="center">
+  <img src="assets/logo.svg" alt="Free SSL Logo" width="96" height="96">
+</p>
+
+<h1 align="center">Free SSL</h1>
 
 通过网页申请和管理免费的 **Let’s Encrypt SSL 证书**，不用命令行。项目文件统一使用小写 `freessl` 命名。
 
