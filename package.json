@@ -1,0 +1,35 @@
+{
+  "name": "freessl",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/core.test.mjs tests/online.test.mjs tests/server.test.mjs",
+    "test:package": "node --test tests/artifact.test.mjs",
+    "pack:install": "npm run build && node package.mjs",
+    "check": "npm test && npm run test:package"
+  },
+  "dependencies": {
+    "fflate": "0.8.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "@php-wasm/node": "3.1.56",
+    "@php-wasm/universal": "3.1.56"
+  },
+  "description": "通过网页申请和管理免费的 Let’s Encrypt SSL 证书",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Skyoslabs/FreeSSL.git"
+  },
+  "homepage": "https://github.com/Skyoslabs/FreeSSL",
+  "bugs": {
+    "url": "https://github.com/Skyoslabs/FreeSSL/issues"
+  },
+  "engines": {
+    "node": ">=24.18.0",
+    "npm": ">=11.16.0"
+  }
+}

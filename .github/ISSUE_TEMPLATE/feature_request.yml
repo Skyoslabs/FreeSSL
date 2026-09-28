@@ -1,0 +1,17 @@
+name: 功能建议
+description: 说明你希望改进的使用场景
+title: "[建议] "
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 你遇到什么问题？
+      description: 描述具体使用场景。
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: 希望怎样改进？
+    validations:
+      required: true

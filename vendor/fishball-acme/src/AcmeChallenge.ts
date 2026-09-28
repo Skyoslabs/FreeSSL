@@ -1,0 +1,303 @@
+// deno-lint-ignore no-unused-vars -- imported for jsdoc
+import type { DnsUtils } from "./mod.ts";
+
+import type { AcmeAccount } from "./AcmeAccount.ts";
+import type { AcmeAuthorization } from "./AcmeAuthorization.ts";
+import { encodeBase64Url } from "./utils/base64.ts";
+
+/**
+ * Different ways to proof control over a domain to the Certificate Authority (CA).
+ * Only `dns-01` is supported in this library. But feel free to implement other challenges yourself!
+ */
+export type AcmeChallengeType = "http-01" | "dns-01" | "tls-alpn-01";
+
+/**
+ * Represents the status of a challenge.
+ *
+ * - `pending`: Waiting for submission.
+ * - `processing`: Challenge is submitted and being verified.
+ * - `valid`: The challenge is verified.
+ * - `invalid`: The challenge has failed verification or has been abandoned by the CA.
+ *              You cannot resubmit the challenge but you may create a new order and
+ *              kickoff the process again.
+ */
+export type AcmeChallengeStatus =
+  | "pending"
+  | "processing"
+  | "valid"
+  | "invalid";
+
+/**
+ * A snapshot of the challenge object retrieved from a Certificate Authority (CA).
+ *
+ * This can be retrieved by {@link AcmeChallenge.prototype.fetch}.
+ *
+ * @see https://datatracker.ietf.org/doc/html/rfc8555#section-7.1.4
+ */
+export type AcmeChallengeObjectSnapshot = {
+  type: AcmeChallengeType;
+  status: AcmeChallengeStatus;
+  url: string;
+  token: string;
+  validationRecord?: {
+    hostname?: string;
+    port?: string;
+    addressesResolved?: string[];
+    addressUsed?: string;
+  }[];
+};
+
+/**
+ * Represents a way to proof control over a domain as offered by the Certificate Authority's (CA).
+ */
+export class AcmeChallenge<
+  const T extends AcmeChallengeType = AcmeChallengeType,
+> {
+  /** The {@link AcmeAuthorization} this challenge belongs to. */
+  readonly authorization: AcmeAuthorization;
+  /**
+   * A random value that uniquely identifies the challenge.
+   * This is used to produce the key authorization value in
+   * {@link AcmeChallenge.prototype.keyAuthorization},
+   * {@link AcmeChallenge.prototype.digestToken},
+   * {@link AcmeChallenge.prototype.getDnsRecordAnswer} and
+   * {@link AcmeChallenge.prototype.getHttpResource}.
+   *
+   * This is *NOT* the value you put in your DNS record or HTTP resource.
+   */
+  readonly token: string;
+  readonly #type: T;
+  /**
+   * The challenge url that uniquely identifies the challenge.
+   * This is used to retrieve {@link AcmeAuthorizationObjectSnapshot} and the challenge submission.
+   */
+  readonly url: string;
+
+  /**
+   * Internal constructor.
+   *
+   * {@link AcmeChallenge} is created when the {@link AcmeAuthorization} is initialized
+   *
+   * @internal
+   */
+  constructor({
+    authorization,
+    token,
+    type,
+    url,
+  }: {
+    authorization: AcmeAuthorization;
+    token: string;
+    type: T;
+    url: string;
+  }) {
+    this.authorization = authorization;
+    this.token = token;
+    this.#type = type;
+    this.url = url;
+  }
+
+  /**
+   * The challenge type. E.g. `dns-01`.
+   *
+   * Note: `challenge.getType() === "dns-01"` does **not** narrow `challenge` —
+   * use {@link AcmeChallenge.prototype.is} to narrow and unlock the
+   * type-specific methods.
+   */
+  getType(): T {
+    return this.#type;
+  }
+
+  /**
+   * The challenge type. E.g. `dns-01`.
+   *
+   * @deprecated Use {@link AcmeChallenge.prototype.getType} to read the type
+   * (and {@link AcmeChallenge.prototype.is} to narrow). This property will be
+   * made fully private in the next version.
+   */
+  get type(): T {
+    return this.#type;
+  }
+
+  get #account(): AcmeAccount {
+    return this.authorization.order.account;
+  }
+
+  /**
+   * Type guard that narrows this challenge to a specific type, unlocking the
+   * type-specific methods. Prefer this over reading
+   * {@link AcmeChallenge.prototype.getType} — `challenge.getType() === "dns-01"`
+   * does **not** narrow `challenge`.
+   *
+   * @example
+   * ```ts
+   * import { type AcmeChallenge } from "@fishballpkg/acme";
+   *
+   * async function handle(challenge: AcmeChallenge) {
+   *   if (challenge.is("dns-01")) {
+   *     await challenge.getDnsRecordAnswer();
+   *   } else if (challenge.is("http-01")) {
+   *     await challenge.getHttpResource();
+   *   }
+   * }
+   * ```
+   */
+  is<U extends T>(type: U): this is AcmeChallenge<U> {
+    return this.#type === type;
+  }
+
+  /**
+   * Fetches a snapshot of the challenge object from the Certificate Authority (CA).
+   */
+  async fetch(): Promise<AcmeChallengeObjectSnapshot> {
+    const response = await this.#account.jwsFetch(this.url);
+    return await response.json();
+  }
+
+  /**
+   * Produces the key authorization value for this challenge
+   */
+  async keyAuthorization(): Promise<string> {
+    const publicKeyJwk = await crypto.subtle.exportKey(
+      "jwk",
+      this.#account.keyPair.publicKey,
+    );
+
+    return `${this.token}.${await getJWKThumbprint(
+      publicKeyJwk,
+    )}`;
+  }
+
+  /**
+   * Produces the key authorization digest for this challenge by digesting the challenge token.
+   */
+  async digestToken(): Promise<string> {
+    return encodeBase64Url(
+      await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(
+          await this.keyAuthorization(),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Submit the challenge.
+   *
+   * You should only call this once you have verified the challenge has been fulfilled.
+   *
+   * {@link DnsUtils.pollDnsTxtRecord} can be used to verify if a `dns-01` challenge has been fulfilled.
+   */
+  async submit(): Promise<unknown> {
+    const response = await this.#account.jwsFetch(this.url, {
+      /**
+       * We must send {} to signify submit
+       * {@link https://datatracker.ietf.org/doc/html/rfc8555#section-7.5.1}
+       */
+      payload: {},
+    });
+
+    if (!response.ok) {
+      console.error(await response.json());
+
+      throw new Error("Failed to submit challenge");
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * Digest the challenge token and return a `Promise` that resolves to the
+   * {@link DnsTxtRecord} needed to be set to fulfill the challenge.
+   *
+   * **Wildcard domains:** For wildcard authorizations (e.g., `*.example.com`),
+   * the DNS record name will use the base domain (`_acme-challenge.example.com.`)
+   * without the `*.` prefix, as per ACME protocol requirements.
+   */
+  async getDnsRecordAnswer(
+    this: AcmeChallenge<"dns-01">,
+  ): Promise<DnsTxtRecord> {
+    const domain = this.authorization.domain.startsWith("*.")
+      ? this.authorization.domain.slice(2)
+      : this.authorization.domain;
+
+    return {
+      name: `_acme-challenge.${domain}.`,
+      type: "TXT",
+      content: await this.digestToken(),
+    };
+  }
+
+  /**
+   * Returns a `Promise` that resolves to the {@link HttpResource} that must be
+   * served (the key authorization, unhashed) to fulfill the challenge.
+   */
+  async getHttpResource(this: AcmeChallenge<"http-01">): Promise<HttpResource> {
+    return {
+      url:
+        `http://${this.authorization.domain}/.well-known/acme-challenge/${this.token}`,
+      name: this.token,
+      content: await this.keyAuthorization(),
+    };
+  }
+}
+
+/**
+ * The required JWK members each key type hashes into its thumbprint
+ * (RFC 7638 §3.2), in lexicographic order — `JSON.stringify` preserves the
+ * literals' member order, so each is spelled pre-sorted.
+ */
+const THUMBPRINT_JWK_MEMBERS_BY_KTY: Record<
+  string,
+  (jwk: JsonWebKey) => Record<string, string | undefined>
+> = {
+  EC: ({ crv, kty, x, y }) => ({ crv, kty, x, y }),
+  RSA: ({ e, kty, n }) => ({ e, kty, n }),
+};
+
+async function getJWKThumbprint(jwk: JsonWebKey): Promise<string> {
+  // Step 1: Create the canonical JSON string from required JWK fields.
+  const pickThumbprintMembers = THUMBPRINT_JWK_MEMBERS_BY_KTY[jwk.kty ?? ""];
+  if (pickThumbprintMembers === undefined) {
+    throw new Error(
+      `Unsupported JWK key type "${jwk.kty}" for thumbprint. Expected "EC" or "RSA".`,
+    );
+  }
+  const canonicalJWK = JSON.stringify(pickThumbprintMembers(jwk));
+
+  // Step 2: Hash the canonical JSON using SHA-256
+  const hash = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonicalJWK),
+  );
+
+  // Step 3: Convert the binary hash to base64url encoding
+  return encodeBase64Url(hash);
+}
+
+/**
+ * A `dns-01` challenge.
+ *
+ * @deprecated Use `AcmeChallenge<"dns-01">` instead — e.g. via
+ * `findChallenge("dns-01")`. This alias will be removed in the next version.
+ */
+export type Dns01Challenge = AcmeChallenge<"dns-01">;
+
+/**
+ * Represents a DNS `TXT` record
+ */
+export interface DnsTxtRecord {
+  name: string;
+  type: "TXT";
+  content: string;
+}
+
+/**
+ * Represents the HTTP challenge file
+ */
+export interface HttpResource {
+  url: string;
+  name: string;
+  content: string;
+}

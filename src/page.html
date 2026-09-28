@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="application-name" content="Free SSL">
+  <meta name="version" content="__APP_VERSION__">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-__SCRIPT_HASH__'; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://acme-v02.api.letsencrypt.org; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="description" content="一个网页入口申请与续期 Let's Encrypt 免费 SSL 证书，支持文件验证、DNS 验证和多个域名。">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a3040'/%3E%3Cpath d='M16 5l9 4v8c0 5-9 10-9 10S7 22 7 17V9z' fill='%233ed7ab'/%3E%3Cpath d='M11 16l3 3 7-7' fill='none' stroke='%230a3040' stroke-width='2.5'/%3E%3C/svg%3E">
+  <title>Free SSL · Let’s Encrypt 免费证书</title>
+  <style>
+    :root{--ink:#113341;--muted:#546d78;--line:#d9e4e9;--paper:#fff;--canvas:#f1f5f7;--navy:#0a3040;--green:#08795d;--mint:#3ed7ab;--warn:#8b5100;--focus:#127eab}
+    *{box-sizing:border-box} [hidden]{display:none!important}
+    body{margin:0;color:var(--ink);background:var(--canvas);font:16px/1.65 "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+    button,input,textarea,select{font:inherit} button,a{touch-action:manipulation}
+    button{cursor:pointer} button:disabled{cursor:not-allowed;opacity:.48}
+    a{color:var(--green);text-underline-offset:4px} a:hover{color:var(--ink)}
+    :focus-visible{outline:3px solid var(--focus);outline-offset:4px}
+    .navigation{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.navigation button{border:0;background:transparent;color:var(--muted);padding:8px 12px;border-radius:8px;font-size:15px}.navigation button[aria-current=page]{background:var(--navy);color:#fff}.header-right{display:flex;gap:14px;align-items:center}.workspace[data-view=certificates]{grid-template-columns:minmax(0,1fr);max-width:1010px}.workspace[data-view=certificates]>.rail{display:none}.certificate-domain{font-size:22px;overflow-wrap:anywhere}.certificate-entry+.certificate-entry{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}
+    .topbar{max-width:1260px;margin:0 auto;padding:25px 36px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+    .brand{display:flex;gap:12px;align-items:center;font-size:20px;font-weight:650;letter-spacing:.02em}
+    .brand svg{width:34px;height:39px;flex:none}.brand small{display:block;font:11px/1.4 Georgia,serif;letter-spacing:.19em;color:var(--muted)}
+    .pill{font-size:14px;font-weight:500;line-height:1.4;border:1px solid var(--line);border-radius:99px;padding:7px 12px;white-space:nowrap}
+    .ready{color:#056549;background:#e1f9ef;border-color:#b4e6d0}.neutral{color:var(--muted);background:#fff}.test{color:var(--warn);background:#fff4dc;border-color:#f0d39b}
+    .workspace{max-width:1260px;display:grid;grid-template-columns:245px minmax(0,1fr);gap:30px;margin:0 auto;padding:8px 36px 48px;align-items:start}
+    .rail{background:var(--navy);border-radius:18px;color:#fff;padding:27px 24px;position:sticky;top:24px;overflow:hidden}
+    .rail:after{content:"";position:absolute;right:-90px;bottom:-70px;width:210px;height:210px;border:1px solid #307080;border-radius:50%;pointer-events:none}
+    .rail-label{color:#9dbac4;font-size:13px;letter-spacing:.12em;margin:0 0 10px}.rail-domain{font:22px/1.4 Georgia,"PingFang SC",serif;overflow-wrap:anywhere;margin:0 0 25px}
+    .steps{list-style:none;padding:0;margin:0}.steps li{display:flex;align-items:center;gap:12px;padding:13px 0;color:#9dbac4;font-size:15px}
+    .step-number{display:grid;place-items:center;flex:none;width:29px;height:29px;border:1px solid #52727d;border-radius:50%;font:14px Georgia,serif}
+    .steps li.active{color:#fff}.steps li.active .step-number{color:var(--navy);background:var(--mint);border-color:var(--mint)}
+    .steps li.done{color:#a4e9ce}.steps li.done .step-number{color:#a4e9ce;border-color:#a4e9ce}
+    .rail-note{border-top:1px solid #365867;padding-top:22px;margin:25px 0 0;color:#b4cbd3;font-size:14px;position:relative;z-index:1}
+    main{min-width:0}.page-title{display:flex;gap:16px;justify-content:space-between;align-items:center;margin-bottom:20px}
+    h1{font-size:29px;line-height:1.3;letter-spacing:-.02em;margin:0}.eyebrow{font:12px/1.5 Georgia,serif;letter-spacing:.14em;color:var(--muted);margin:0 0 7px}
+    .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:28px;margin:0 0 22px;scroll-margin-top:22px;box-shadow:0 7px 22px #18374905}
+    .card.completed{opacity:.8}.card-heading{display:flex;gap:12px;justify-content:space-between;align-items:start;margin-bottom:18px}
+    h2{font-size:21px;font-weight:650;line-height:1.4;margin:0}h3{font-size:17px;margin:0 0 15px;overflow-wrap:anywhere}
+    .card-index{font:16px/1.6 Georgia,serif;color:var(--green);flex:none}.muted,.helper{color:var(--muted)}
+    .helper{font-size:14px;margin:8px 0 0}
+    #apply-description{margin:0 0 24px;font-size:15px;color:var(--muted)}
+    .label{display:block;font-size:16px;font-weight:600;margin:0 0 8px}.field{margin:0 0 23px}
+    textarea,select,input[type=text],input[type=password]{border:1px solid #b9cdd6;border-radius:9px;background:#fbfdfe;color:var(--ink);width:100%;padding:12px 14px}
+    textarea{resize:vertical;min-height:99px;font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;font-size:15px;line-height:1.7}
+    textarea::placeholder{color:#7b8f97} select{min-height:48px}
+    fieldset{border:0;padding:0;margin:0}.validation-options{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .option{display:flex;gap:10px;align-items:start;cursor:pointer;border:1px solid var(--line);border-radius:11px;padding:14px}
+    .option:has(input:checked){border-color:var(--green);background:#f0fbf6;box-shadow:inset 0 0 0 1px var(--green)}
+    .option strong{display:block;font-size:16px;font-weight:550}.option span{display:block;font-size:14px;color:var(--muted)}
+    input[type=radio],input[type=checkbox]{accent-color:var(--green);width:18px;height:18px;flex:none;margin:4px 0 0}
+    .check{display:flex;gap:10px;align-items:start;font-size:14px;margin:22px 0}.check label{cursor:pointer}
+    .advanced{margin:18px 0;color:var(--muted);font-size:14px}.advanced summary{cursor:pointer}.advanced-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding-top:14px}.advanced .label{font-size:14px}
+    .primary,.secondary,.ghost,.small-button{display:inline-flex;align-items:center;justify-content:center;border-radius:9px;padding:11px 18px;font-size:15px;line-height:1.5;text-decoration:none}
+    .primary{background:var(--navy);color:#fff;border:1px solid var(--navy);font-weight:550}.primary:hover{background:#154b60;color:#fff}
+    .secondary{background:#fff;color:var(--ink);border:1px solid #bdcfd7}.secondary:hover{background:#f2f7f9}
+    .ghost{border:0;background:transparent;color:var(--green);padding:9px 0}.small-button{border:1px solid #bfd2d9;background:#fff;color:var(--ink);font-size:13px;padding:5px 10px;flex:none}
+    .actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.text-link{font-size:15px;font-weight:500}.start-actions{margin-top:20px}
+    .activity{display:flex;align-items:start;gap:10px;background:#e8eff3;border-radius:10px;padding:14px 17px;margin-bottom:22px;color:#365561;font-size:14px}
+    .dot{width:7px;height:7px;background:#829da8;border-radius:50%;flex:none;margin-top:8px}.working .dot{background:var(--green);animation:pulse 1.4s infinite}
+    .error{border-left:4px solid #b65033;background:#fff0ea;border-radius:9px;padding:17px 20px;margin-bottom:22px;font-size:15px}.error h2{font-size:17px}.error p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 12px}
+    .instructions{padding:0 0 0 22px;margin:12px 0 20px;font-size:15px}.instructions li{padding-left:5px;margin:10px 0}
+    code{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;font-size:14px;background:#edf3f5;border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}
+    .resource-card{border:1px solid var(--line);border-radius:11px;padding:19px;margin:18px 0;background:#fafcfd}
+    .manual-files{margin:22px 0;border:1px solid var(--line);border-radius:11px;background:#fafcfd}.manual-files summary{cursor:pointer;padding:16px 19px;color:var(--green);font-size:15px;font-weight:550}.manual-files[open] summary{border-bottom:1px solid var(--line)}.manual-files-body{padding:4px 19px 19px}.manual-files-body .resource-card{background:#fff;margin-bottom:0}.verification-heading{margin:24px 0 8px}.submission-actions{margin-top:20px}
+    .resource-row{display:flex;align-items:baseline;flex-wrap:wrap;gap:9px;margin:13px 0}.field-caption{color:var(--muted);font-size:14px;flex:none;min-width:80px}.resource-value{background:transparent;padding:0;flex:1;min-width:150px;word-break:break-all}
+    .notice{background:#edf9f3;border-left:3px solid var(--green);border-radius:7px;padding:14px 17px;font-size:14px;margin:16px 0}
+    .notice.warning{background:#fff5dd;border-color:#c98a2e;color:#714300}.divider{height:1px;background:var(--line);margin:23px 0}
+    .runtime-line{display:flex;align-items:center;flex-wrap:wrap;gap:12px;font-size:14px;color:var(--muted);margin:-8px 0 18px}.runtime-line button{padding:5px 10px;font-size:13px}
+    .result-metadata{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:23px 0}.result-metadata dt{color:var(--muted);font-size:14px}.result-metadata dd{font-size:20px;font-weight:550;margin:4px 0 0}.wide{grid-column:1/-1}.wide dd{font-size:17px;overflow-wrap:anywhere}
+    .download-bar{background:var(--navy);border-radius:11px;padding:20px;color:#fff;display:flex;gap:18px;align-items:center;justify-content:space-between;margin-top:30px}.download-bar p{margin:4px 0 0;font-size:14px;color:#c7dee5}.download-bar .primary{background:var(--mint);color:var(--navy);border-color:var(--mint);flex:none}
+    .output-fields{display:grid;gap:28px;margin-top:26px}.output-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;flex-wrap:wrap}.output-heading .label{margin:0}.output-heading button{padding:8px 14px}.output-fields textarea{display:block;margin:0;min-height:180px;font-size:13px}.separate-downloads{margin-top:18px}
+    .site-links{display:flex;gap:15px;flex-wrap:wrap;margin-top:16px}.footer{font-size:13px;color:var(--muted);padding:6px 2px}.footer summary{cursor:pointer}.footer p{max-width:76ch}.license{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+    #toast{position:fixed;left:50%;bottom:25px;transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 22px;border-radius:9px;box-shadow:0 5px 20px #0002;font-size:14px;z-index:5;max-width:calc(100% - 30px)}
+    .clipboard-fallback{position:fixed;left:-9999px;top:0}
+    .operation-status{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);width:min(640px,calc(100% - 32px));z-index:20;display:flex;align-items:center;gap:16px;padding:18px 22px;background:var(--navy);color:#fff;border:1px solid #467080;border-radius:12px;box-shadow:0 12px 38px #06243240}.operation-status strong{display:block;font-size:16px}.operation-status p{margin:4px 0 0;color:#d4e8ed;font-size:14px}.operation-spinner{width:25px;height:25px;flex:none;border:3px solid #52727d;border-top-color:var(--mint);border-radius:50%;animation:spin 1s linear infinite}
+    .auth-gate{max-width:500px;margin:8vh auto 40px;padding:0 20px}.auth-gate .label{margin-top:18px}.auth-gate .actions{margin-top:22px}.auth-gate .primary{width:100%}.auth-gate h1{font-size:26px}.auth-error{color:#a43e25;white-space:pre-wrap}.password-help{margin-top:20px;font-size:14px;color:var(--muted)}.password-help summary{cursor:pointer;color:var(--green)}.password-help p{margin:12px 0 0}
+    @keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{50%{opacity:.25;transform:scale(1.4)}}@media(prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important}}
+    @media(max-width:850px){.topbar{padding:20px}.workspace{padding:0 20px 30px;grid-template-columns:1fr;gap:20px}.rail{position:static;padding:18px 20px}.rail-label,.rail-domain,.rail-note{display:none}.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.steps li{padding:0;flex-direction:column;font-size:14px;gap:8px;text-align:center}.page-title{margin-bottom:17px}.card{padding:22px}.card.completed{display:none}}
+    @media(max-width:520px){.header-right{flex-direction:column;align-items:end;gap:4px}.navigation{gap:0}.navigation button{padding:7px;font-size:13px}.topbar{padding:17px 16px}.brand{font-size:18px}.topbar>.pill{font-size:12px;padding:6px 9px}.workspace{padding:0 16px 25px}.rail{padding:15px 12px}.steps li{font-size:13px}.page-title{align-items:start;flex-direction:column;gap:10px}h1{font-size:26px}.card{padding:20px 17px}.validation-options,.advanced-grid{grid-template-columns:1fr}.option{padding:12px}.download-bar{align-items:start;flex-direction:column}.result-metadata{gap:13px}.result-metadata dd{font-size:17px}.resource-card{padding:15px}.primary,.secondary{padding:10px 14px}.actions{gap:10px}.resource-value{min-width:100%;flex-basis:100%}}
+  </style>
+</head>
+<body>
+  <!-- TEMPLATE_NOTICE_START --><div style="padding:16px;background:#fff1c6;color:#283e48">这是开发源码模板。请打开 <a href="../freessl.html">完整的 freessl.html</a> 使用，或解压安装包后打开其中的 HTML 文件。</div><!-- TEMPLATE_NOTICE_END -->
+  <header class="topbar">
+    <div class="brand"><svg viewBox="0 0 34 39" aria-hidden="true"><path d="M17 1 32 7v13c0 8-15 17-15 17S2 28 2 20V7Z" fill="#0a3040"/><path d="m10 19 5 5 10-12" fill="none" stroke="#3ed7ab" stroke-width="3"/></svg><div>Free SSL<small>LET’S ENCRYPT 免费证书</small></div></div>
+    <div class="header-right"><span id="connection" class="pill neutral">正在检查连接</span><nav id="navigation" class="navigation" aria-label="主导航" hidden><button id="nav-apply" aria-current="page">申请证书</button><button id="nav-certificates">我的证书</button><button id="logout-online" data-network>退出登录</button></nav></div>
+  </header>
+  <section id="auth-gate" class="auth-gate" aria-labelledby="auth-title">
+    <div class="card"><h1 id="auth-title">正在准备…</h1><p id="auth-description" class="helper">请稍候…</p><p id="auth-error" class="auth-error" role="alert" hidden></p>
+      <div id="online-setup" hidden><form id="setup-form"><input type="text" name="username" autocomplete="username" value="freessl" hidden><label for="setup-password" class="label">设置密码</label><input id="setup-password" name="new-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required placeholder="至少 8 个字符"><label for="confirm-password" class="label">再输入一次</label><input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required placeholder="确认密码"><div class="actions"><button class="primary" type="submit" data-network>设置密码并进入</button></div></form></div>
+      <div id="online-login" hidden><form id="login-form"><input type="text" name="username" autocomplete="username" value="freessl" hidden><label for="login-password" class="label">登录密码</label><input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="72" required placeholder="输入你设置的密码"><div class="actions"><button class="primary" type="submit" data-network>登录</button></div></form>
+        <details id="password-help" class="password-help"><summary>忘记密码？</summary><p id="password-help-php" hidden>在主机面板的“文件管理”里，打开 Free SSL 所在目录，删除 <code>freessl-password.php</code>。重新打开这个页面，设置新密码即可。已有证书会保留。</p><p id="password-help-local" hidden>将电脑里的 <code>freessl.html</code> 复制到一个新文件夹，再打开设置新密码。新的位置从空白记录开始；已下载的证书包和网站正在使用的证书不受影响。</p></details>
+      </div>
+    </div>
+  </section>
+  <div id="application" class="workspace" hidden>
+    <aside class="rail" aria-label="办理进度">
+      <p class="rail-label">当前办理</p><p id="domain-summary" class="rail-domain">填写你的域名</p>
+      <ol class="steps"><li data-step="1" class="active" aria-current="step"><span class="step-number">01</span>申请信息</li><li data-step="2"><span class="step-number">02</span>域名验证</li><li data-step="3"><span class="step-number">03</span>签发证书</li><li data-step="4"><span class="step-number">04</span>安装使用</li></ol>
+      <p class="rail-note">签发后，证书 PEM 和私钥 KEY 会一起显示，直接复制到主机面板即可。</p>
+    </aside>
+    <main>
+      <div class="page-title"><div><p class="eyebrow">LET’S ENCRYPT</p><h1 id="page-heading">申请 Let’s Encrypt 免费证书</h1></div><span id="environment-badge" class="pill ready">免费 SSL 证书</span></div>
+      <div id="activity" class="activity" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="activity-text">正在准备浏览器环境…</span></div>
+      <div class="runtime-line"><span id="runtime-label">正在检测 PHP…</span><button id="check-online" class="small-button" data-network>重新检测 PHP</button></div>
+      <div id="error" class="error" role="alert" hidden><h2>暂时没成功</h2><p id="error-text"></p><div class="actions"><button id="reconnect" class="secondary" data-network>重新连接</button><button id="error-restart" class="secondary" data-network hidden>重新生成验证文件或记录</button></div></div>
+      <section id="setup-card" class="card" aria-labelledby="setup-title">
+        <div class="card-heading"><h2 id="setup-title">填写申请信息</h2><span class="card-index">01</span></div>
+        <p id="apply-description">选好网站和验证方式后，点击申请。</p>
+        <fieldset class="field"><legend class="label">为哪个网站申请？</legend><div class="validation-options"><label class="option"><input type="radio" name="target" value="site" checked><div><strong>为本站申请</strong><span id="site-target-description">为这个网站申请证书。</span></div></label><label class="option"><input type="radio" name="target" value="other"><div><strong>为其他网站申请</strong><span>填写你要申请证书的域名。</span></div></label></div></fieldset><div class="field"><label class="label" for="domains">网站域名</label><input id="domains" type="text" placeholder="example.com" autocomplete="off" spellcheck="false" autocapitalize="none" aria-describedby="domains-help"><p id="domains-help" class="helper">例如 example.com，不用填写 https://。一张证书包含多个域名时，在高级选项添加。</p></div>
+        <fieldset class="field"><legend class="label">验证方式</legend><div class="validation-options"><label class="option"><input type="radio" name="method" value="http-01" checked><div><strong>文件验证</strong><span id="file-method-description">上传验证文件到网站目录。</span></div></label><label class="option"><input type="radio" name="method" value="dns-01"><div><strong>DNS 验证</strong><span>按提示添加域名解析记录，泛域名也用这个。</span></div></label></div></fieldset>
+        <details class="advanced"><summary>高级选项</summary><label for="additional-domains" class="label">附加域名 · 与主域名共用一张证书</label><textarea id="additional-domains" placeholder="www.example.com" spellcheck="false"></textarea><div class="advanced-grid"><div><label for="key-algorithm" class="label">密钥类型</label><select id="key-algorithm"><option value="rsa-2048">RSA 2048 · 兼容性好</option><option value="ec-p256">ECDSA P-256 · 文件更小</option></select></div></div></details>
+        <div class="check"><input id="terms" type="checkbox" disabled><label for="terms">我已阅读并同意 <a id="terms-link" target="_blank" rel="noopener noreferrer">Let’s Encrypt 服务条款</a>。</label></div>
+        <div class="actions start-actions"><button id="start" class="primary" data-network disabled>申请证书</button></div>
+      </section>
+      <section id="certificates-page" class="card" aria-labelledby="certificates-title" hidden><div class="card-heading"><h2 id="certificates-title">我的证书</h2><span id="certificate-storage" class="helper"></span></div><p id="certificates-empty" class="helper">还没有证书。点击右上角“申请证书”开始。</p><div id="saved-list"></div></section>
+      <section id="challenge-card" class="card" aria-labelledby="continue-title" hidden>
+        <div class="card-heading"><h2 id="continue-title">上传验证文件</h2><span class="card-index">02</span></div>
+        <div id="http-instructions"><ol class="instructions"><li>下载验证文件包。<div class="actions"><button id="download-challenge-zip" class="secondary">下载验证文件包 ZIP</button></div></li><li>在自己的主机面板打开“文件管理”，进入对应域名的<strong>网站根目录</strong>。</li><li>上传 ZIP 并解压到当前目录。解压后应出现 <code>.well-known/acme-challenge/</code> 文件夹，原有网站文件不用修改。</li><li>逐个打开下方“验证网址”，确认页面显示的内容与“应显示的内容”一致；不要出现 404、登录页或验证码。</li></ol><p class="helper">多个域名共用网站根目录时只需上传一次；目录不同时，分别上传到各自的网站根目录。</p></div>
+        <div id="dns-instructions" hidden><ol class="instructions"><li>在你的 DNS 服务商面板，找到相应域名的解析设置。</li><li>逐条添加下面的 <strong>TXT</strong> 记录。只增加验证记录，不需要修改网站的 A 或 CNAME 记录。</li><li>等待解析生效后，勾选下方确认框并提交。通常需要几分钟，具体取决于服务商。</li></ol><div class="notice">面板要求填写“主机记录”时，去掉它自动追加的区域域名。例如：完整记录名是 <code>_acme-challenge.blog.example.com</code>，在 <code>example.com</code> 的面板中填写 <code>_acme-challenge.blog</code>。同名 TXT 有多条时，逐条添加，不要互相覆盖。</div></div>
+        <div id="cached-verification" class="notice" hidden>域名验证仍然有效，可以直接取得证书。</div>
+        <div id="auto-place-panel" class="notice" hidden><p id="auto-place-status">可以自动放置到当前网站的验证目录。</p><button id="auto-place" class="secondary" data-network>自动放置并继续签发</button><p class="helper">如果自动放置失败，仍可按下面的指引下载上传，或改用 DNS 验证。</p></div>
+        <div id="resource-list"></div>
+        <details id="manual-files" class="manual-files" hidden><summary>无法上传或者不想上传，手动创建文件夹及验证文件</summary><div class="manual-files-body"><ol class="instructions"><li>在目标网站的根目录新建 <code>.well-known</code> 文件夹；如果已经存在，直接打开。</li><li>进入 <code>.well-known</code>，新建并打开 <code>acme-challenge</code> 文件夹；已有文件夹直接使用。</li><li>在里面按下方“文件名”新建文件，不添加 <code>.txt</code> 等后缀。粘贴对应的“文件内容”，保存为纯文本。</li><li>保存后打开上方的验证网址，确认显示的内容一致，再提交验证。</li></ol><div id="manual-resource-list"></div></div></details>
+        <p id="challenge-helper" class="helper">文件验证需要域名已解析到该网站，并允许公网访问 80 端口。验证失败后，按提示重新生成材料。</p>
+        <div class="actions"><button id="switch-dns" class="ghost" data-network>文件验证不方便，改用 DNS 验证</button><button id="restart" class="secondary" data-network hidden>重新生成验证材料</button></div>
+        <div id="confirmation-row" class="check"><input id="confirmed" type="checkbox"><label for="confirmed" id="confirmation-label">我已确认验证文件可以访问。</label></div>
+        <div class="actions submission-actions"><button id="issue" class="primary" data-network disabled>提交验证并取得证书</button></div>
+      </section>
+      <section id="result-card" class="card" aria-labelledby="result-title" hidden>
+        <div class="card-heading"><h2 id="result-title">证书申请成功</h2><span class="card-index">04</span></div>
+        <span id="result-state" class="pill ready">Let’s Encrypt 已签发</span>
+        <dl class="result-metadata"><div class="wide"><dt>证书域名</dt><dd id="issued-domain"></dd></div><div><dt>到期日期</dt><dd id="issued-until"></dd></div><div><dt>建议续期日期</dt><dd id="recommended-renewal"></dd></div></dl>
+        <div class="output-fields"><section class="output-block"><div class="output-heading"><label for="cert-output" class="label">证书 PEM</label><button id="copy-cert" class="secondary">复制证书 PEM</button></div><textarea id="cert-output" readonly spellcheck="false" autocomplete="off"></textarea></section><section class="output-block"><div class="output-heading"><label for="key-output" class="label">私钥 KEY</label><button id="copy-key" class="secondary">复制私钥 KEY</button></div><textarea id="key-output" readonly spellcheck="false" autocomplete="off"></textarea></section></div>
+        <div id="browser-downloads" class="download-bar"><div><strong>下载证书</strong><p>证书和私钥一起打包。</p></div><button id="download-result-zip" class="primary">下载完整证书包</button></div>
+        <div class="actions separate-downloads"><button id="download-cert" class="secondary">单独下载证书 PEM</button><button id="download-key" class="secondary">单独下载私钥 KEY</button></div>
+        <div id="deployment-instructions"><div class="divider"></div><h3>把证书安装到网站</h3><p class="helper">将 PEM 和 KEY 分别填到主机面板的证书框、私钥框，保存后打开网站检查。详细步骤见安装包里的 readme.md。</p><div id="site-links" class="site-links"></div></div>
+        <div id="renewal-note" class="notice">到建议续期日期时，在“我的证书”找到对应域名，点击“一键续期”。</div>
+      </section>
+      <div class="actions" style="margin-bottom:22px"><button id="reset-page" class="ghost" data-network hidden>重新填写申请信息</button></div>
+      <footer class="footer"><p>Free SSL v__APP_VERSION__ · <a href="readme.md" target="_blank" rel="noopener noreferrer">使用说明</a></p><details><summary>开源许可</summary><pre class="license">__LICENSES__</pre></details></footer>
+    </main>
+  </div>
+  <div id="operation-status" class="operation-status" role="status" aria-live="polite" aria-atomic="true" hidden><span class="operation-spinner" aria-hidden="true"></span><div><strong id="operation-title">正在申请证书…</strong><p id="operation-message">请稍候，不用重复点击。</p></div></div>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <noscript>本工具需要浏览器允许 JavaScript。请使用最新版 Chrome 打开保存到电脑的文件。</noscript>
+  <script>__BUNDLE__</script>
+</body>
+</html>

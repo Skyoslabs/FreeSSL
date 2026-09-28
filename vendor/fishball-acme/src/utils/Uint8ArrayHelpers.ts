@@ -1,0 +1,52 @@
+export const uint8ArrayToNumber = (bytes: Uint8Array<ArrayBuffer>): number => {
+  let x = 0;
+
+  for (const byte of bytes) {
+    x <<= 8;
+    x |= byte;
+
+    if (x < 0) {
+      throw new Error(
+        "Number overflow during decoding. It appears the Uint8Array<ArrayBuffer> is too long",
+      );
+    }
+  }
+
+  return x;
+};
+
+export const unsignedIntegerToUint8Array = (
+  n: number,
+): Uint8Array<ArrayBuffer> => {
+  if (n < 0 || !Number.isInteger(n)) {
+    throw new Error("expect unsigned integer!");
+  }
+
+  const bytes: number[] = [];
+  let temp = n;
+  do {
+    bytes.unshift(temp & 0b1111_1111); // Extract the least significant octet
+    temp >>= 8; // Remove the least significant byte
+  } while (temp > 0);
+
+  return Uint8Array.from(bytes);
+};
+
+export const isEqualUint8Arrays = (
+  a: Uint8Array<ArrayBuffer>,
+  b: Uint8Array<ArrayBuffer>,
+): boolean =>
+  a.byteLength === b.byteLength && a.every((byte, i) => byte === b[i]);
+
+export const concatUint8Arrays = (
+  ...xss: readonly ArrayLike<number>[]
+): Uint8Array<ArrayBuffer> => {
+  const totalLength = xss.reduce((acc, { length }) => acc + length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const arr of xss) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
+};

@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/skoerfgen/ACMECert",
+  "version": "3.7.3",
+  "commit": "6b4c54120851e88cf98fa380edbe9ed659e69e9f",
+  "license": "MIT",
+  "sha256": {
+    "src/ACME_Exception.php": "9c8e903dd654fb96939508f05d3f18e4729c8031e758f96a4fca420412f7b510",
+    "src/ACMEv2.php": "a83ae782518556362ff8fe39839f4e1a6163b7f33052b28d21e34f7e6bc8119d",
+    "src/ACMECert.php": "9e57b7294eb1d91f2e66b583d1e572f893b2b4e7ad297d91db7b39f5b06a718f",
+    "LICENSE.md": "7e9f5835297af0a17a85bdb10d133862fb7e2417fa9dc2c04dce727cb000f0e6"
+  }
+}

@@ -1,0 +1,268 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { X509Certificate, createPrivateKey, randomBytes } from 'node:crypto';
+import { phpFixture } from './php-runtime.mjs';
+import { MockCA } from './mock-ca.mjs';
+const http = { server: { HTTPS: 'off', HTTP_ORIGIN: 'http://site.test' } };
+const termsUrl = 'https://letsencrypt.org/documents/test-terms.pdf';
+const issueBody = { environment: 'production', domains: ['example.com', 'www.example.com'], keyAlgorithm: 'rsa-2048', termsAgreed: true, termsUrl };
+
+test('Subdirectory deployment places HTTP challenges at the website root and saves results beside the program', async t => {
+  const ca = await new MockCA().init(); let observedChallenges = 0;
+  const f = await phpFixture({ installDirectory: '/site/tools/freessl', transport: async (url, options) => {
+    if (new URL(url).pathname.endsWith('/http-01') && options.body) {
+      const parts = new URL(url).pathname.split('/'); const auth = ca.orders.get(Number(parts[2])).auths[Number(parts[3])];
+      const contents = f.php.readFileAsText('/site/.well-known/acme-challenge/' + auth.token);
+      assert.ok(contents.startsWith(auth.token + '.')); observedChallenges++;
+      assert.equal(f.php.fileExists('/site/tools/freessl/.well-known'), false);
+    }
+    return ca.fetch(url, options);
+  } }); t.after(() => f.php.exit()); f.configure();
+  assert.equal((await f.request('status', null, http)).body.capable, true);
+  const issued = await f.request('issue', { ...issueBody, target: 'site', method: 'http-01' }, http);
+  assert.equal(issued.status, 200, issued.raw + issued.errors); assert.equal(observedChallenges, 2);
+  assert.equal(f.php.fileExists('/site/ssl-helper.config.php'), false);
+  assert.equal(f.php.fileExists('/site/freessl-password.php'), false);
+  assert.equal(f.php.fileExists('/site/tools/freessl/' + issued.body.record.certificateFile), true);
+  assert.equal(f.php.fileExists('/site/tools/freessl/' + issued.body.record.privateKeyFile), true);
+  assert.ok(new X509Certificate(issued.body.certificate).checkPrivateKey(createPrivateKey(issued.body.privateKey)));
+  const reopened = await f.request('result', { id: issued.body.record.id }, http);
+  assert.equal(reopened.body.privateKey, issued.body.privateKey);
+  assert.equal((await f.request('status', null, { ...http, server: { ...http.server, DOCUMENT_ROOT: '/outside' } })).status, 409);
+});
+
+test('Own-site DNS remains a user choice and preserves its method across completion and renewal', async t => {
+  const ca = await new MockCA().init();
+  const f = await phpFixture({ transport: ca.fetch }); t.after(() => f.php.exit()); f.configure();
+  const begun = await f.request('issue', { ...issueBody, domains: ['*.example.com', 'example.com'], method: 'dns-01', target: 'site' }, http);
+  assert.equal(begun.status, 200, begun.raw + begun.errors);
+  assert.equal(begun.body.pending, true); assert.equal(begun.body.record.target, 'site');
+  assert.equal(begun.body.record.method, 'dns-01'); assert.equal(begun.body.resources.length, 2);
+  assert.ok(begun.body.resources.every(resource => resource.name === '_acme-challenge.example.com'));
+  assert.notEqual(begun.body.resources[0].content, begun.body.resources[1].content);
+  assert.equal(f.php.fileExists('/site/.well-known'), false);
+  const id = begun.body.record.id;
+  assert.deepEqual((await f.request('pending', { id }, http)).body.resources, begun.body.resources);
+  const completed = await f.request('complete', { id, confirmed: true, termsAgreed: true, termsUrl }, http);
+  assert.equal(completed.status, 200, completed.raw + completed.errors);
+  assert.equal(completed.body.record.method, 'dns-01'); assert.equal(completed.body.record.target, 'site');
+  assert.ok(new X509Certificate(completed.body.certificate).checkPrivateKey(createPrivateKey(completed.body.privateKey)));
+  const saved = JSON.parse(f.php.readFileAsText('/site/ssl-helper.config.php').slice(f.guard.length));
+  saved.records[id].renewAt = Math.floor(Date.now() / 1000) - 1;
+  f.php.writeFile('/site/ssl-helper.config.php', f.guard + JSON.stringify(saved));
+  const renewed = await f.request('renew', { id, termsAgreed: true, termsUrl }, http);
+  assert.equal(renewed.status, 200, renewed.raw + renewed.errors); assert.equal(renewed.body.pending, true);
+  assert.equal(renewed.body.record.method, 'dns-01'); assert.equal(renewed.body.record.target, 'site');
+  assert.notEqual(renewed.body.resources[0].content, begun.body.resources[0].content);
+  assert.equal(f.php.fileExists('/site/.well-known'), false);
+});
+
+test('HTTP first use sets a chosen password, signs in automatically, cannot overwrite setup, and revokes logout sessions', async t => {
+  const f = await phpFixture(); t.after(() => f.php.exit());
+  const password = ' ' + randomBytes(18).toString('base64url') + ' ';
+  assert.equal((await f.request('status', null, http)).body.configured, false);
+  assert.equal((await f.request('set-password', { password, confirmPassword: 'mismatch' }, http)).status, 400);
+  assert.equal((await f.request('set-password', { password: 'short', confirmPassword: 'short' }, http)).status, 400);
+  assert.equal((await f.request('set-password', { password: 'a'.repeat(73), confirmPassword: 'a'.repeat(73) }, http)).status, 400);
+  assert.equal((await f.request('set-password', { password, confirmPassword: password }, { ...http, server: { ...http.server, HTTP_SEC_FETCH_SITE: 'cross-site' } })).status, 403);
+  assert.equal(f.php.fileExists('/site/ssl-helper.config.php'), false);
+  const activated = await f.request('set-password', { password, confirmPassword: password }, http);
+  assert.equal(activated.status, 200, activated.errors); assert.equal(activated.body.token, undefined); assert.ok(!activated.raw.includes(password));
+  const stored = f.php.readFileAsText('/site/freessl-password.php');
+  assert.ok(!stored.includes(password)); assert.match(JSON.parse(stored.slice(f.guard.length)).password_hash, /^\$2y\$12\$/);
+  const cookie = activated.headers['set-cookie'][0];
+  assert.match(cookie, /HttpOnly/i); assert.match(cookie, /SameSite=Strict/i); assert.ok(!cookie.includes('Secure'));
+  assert.ok(!stored.includes(cookie.split(';')[0].split('=')[1]));
+  const headers = { Cookie: cookie.split(';')[0] };
+  assert.equal((await f.request('status', null, { ...http, headers })).body.authenticated, true);
+  assert.equal((await f.request('status', null, { ...http, headers: { Cookie: '' } })).body.authenticated, false);
+  assert.equal((await f.request('set-password', { password, confirmPassword: password }, http)).status, 409);
+  assert.equal((await f.request('login', { password: 'wrong-password' }, http)).status, 403);
+  const login = await f.request('login', { password }, http);
+  assert.equal(login.status, 200, login.raw + login.errors); assert.equal(login.body.token, undefined);
+  const loginCookie = login.headers['set-cookie'][0].split(';')[0];
+  assert.notEqual(loginCookie, headers.Cookie);
+  assert.equal((await f.request('logout', {}, { ...http, headers })).status, 200);
+  assert.equal((await f.request('status', null, { ...http, headers })).body.authenticated, false);
+  assert.equal((await f.request('status', null, { ...http, headers: { Cookie: loginCookie } })).body.authenticated, true);
+  const config = JSON.parse(f.php.readFileAsText('/site/freessl-password.php').slice(f.guard.length));
+  for (const hash of Object.keys(config.sessions)) config.sessions[hash] = Math.floor(Date.now() / 1000) - 1;
+  f.php.writeFile('/site/freessl-password.php', f.guard + JSON.stringify(config));
+  assert.equal((await f.request('status', null, { ...http, headers: { Cookie: loginCookie } })).body.authenticated, false);
+  for (let attempt = 0; attempt < 5; attempt++) assert.equal((await f.request('login', { password: 'invalid-password' }, http)).status, 403);
+  assert.equal((await f.request('login', { password }, http)).status, 429);
+  const blocked = JSON.parse(f.php.readFileAsText('/site/freessl-password.php').slice(f.guard.length));
+  blocked.login_blocked_until = Math.floor(Date.now() / 1000) - 1;
+  f.php.writeFile('/site/freessl-password.php', f.guard + JSON.stringify(blocked));
+  assert.equal((await f.request('login', { password }, http)).status, 200);
+  const direct = await f.php.runStream({ scriptPath: '/site/freessl-password.php' });
+  assert.equal(await direct.httpStatusCode, 404); assert.equal(await direct.stdoutText, '');
+});
+
+test('Deleting the password file resets login while retaining certificates, accounts and pending orders, including older installations', async t => {
+  const ca = await new MockCA().init(), directory = '/site/tools/freessl';
+  const f = await phpFixture({ installDirectory: directory, transport: ca.fetch }); t.after(() => f.php.exit());
+  const oldPassword = randomBytes(18).toString('base64url');
+  const initial = await f.request('set-password', { password: oldPassword, confirmPassword: oldPassword }, http);
+  assert.equal(initial.status, 200, initial.errors);
+  const oldLogin = { ...http, headers: { Cookie: initial.headers['set-cookie'][0].split(';')[0] } };
+  const issued = await f.request('issue', { ...issueBody, target: 'site', method: 'http-01' }, oldLogin);
+  assert.equal(issued.status, 200, issued.errors);
+  const pending = await f.request('issue', { ...issueBody, domains: ['pending.example.com'], target: 'other', method: 'dns-01' }, oldLogin);
+  assert.equal(pending.status, 200, pending.errors); assert.equal(pending.body.pending, true);
+  const readState = name => JSON.parse(f.php.readFileAsText(directory + '/' + name).slice(f.guard.length));
+  // Simulate the previous combined state format; migration must preserve its login and records.
+  f.php.writeFile(directory + '/ssl-helper.config.php', f.guard + JSON.stringify({ ...readState('ssl-helper.config.php'), ...readState('freessl-password.php') }));
+  f.php.unlink(directory + '/freessl-password.php');
+  const migrated = await f.request('status', null, oldLogin);
+  assert.equal(migrated.body.authenticated, true); assert.equal(migrated.body.records.length, 2);
+  assert.equal(readState('ssl-helper.config.php').password_hash, undefined);
+  assert.equal(f.php.fileExists(directory + '/freessl-password.php'), true);
+  const keptState = f.php.readFileAsText(directory + '/ssl-helper.config.php');
+  // The documented reset is exactly one filesystem deletion, without removing state or keys.
+  f.php.unlink(directory + '/freessl-password.php');
+  const reset = await f.request('status', null, oldLogin);
+  assert.equal(reset.body.configured, false); assert.equal(reset.body.authenticated, false);
+  assert.equal(reset.body.records.length, 0);
+  assert.equal((await f.request('result', { id: issued.body.record.id }, oldLogin)).status, 503);
+  assert.equal(f.php.readFileAsText(directory + '/ssl-helper.config.php'), keptState);
+  const newPassword = randomBytes(18).toString('base64url');
+  const setup = await f.request('set-password', { password: newPassword, confirmPassword: newPassword }, http);
+  assert.equal(setup.status, 200, setup.errors);
+  const newLogin = { ...http, headers: { Cookie: setup.headers['set-cookie'][0].split(';')[0] } };
+  assert.equal((await f.request('status', null, newLogin)).body.records.length, 2);
+  assert.equal((await f.request('result', { id: issued.body.record.id }, oldLogin)).status, 403);
+  assert.equal((await f.request('login', { password: oldPassword }, http)).status, 403);
+  const reopened = await f.request('result', { id: issued.body.record.id }, newLogin);
+  assert.equal(reopened.body.certificate, issued.body.certificate); assert.equal(reopened.body.privateKey, issued.body.privateKey);
+  assert.deepEqual((await f.request('pending', { id: pending.body.record.id }, newLogin)).body.resources, pending.body.resources);
+  assert.equal(f.php.readFileAsText(directory + '/ssl-helper.config.php'), keptState);
+  const renewal = await f.request('renew', { id: issued.body.record.id, termsAgreed: true, termsUrl }, newLogin);
+  assert.equal(renewal.status, 200, renewal.errors); assert.equal(renewal.body.reused, true);
+  const direct = await f.php.runStream({ scriptPath: directory + '/freessl-password.php' });
+  assert.equal(await direct.httpStatusCode, 404); assert.equal(await direct.stdoutText, '');
+});
+
+test('HTTP issuance/renewal save matching PEM and KEY together; authenticated reopening retrieves them; public files remain guarded', async t => {
+  const ca = await new MockCA().init();
+  const f = await phpFixture({ transport: async (url, options) => {
+    if (new URL(url).pathname.endsWith('/http-01') && options.body) {
+      const index = new URL(url).pathname.split('/'); const auth = ca.orders.get(Number(index[2])).auths[Number(index[3])];
+      const contents = f.php.readFileAsText('/site/.well-known/acme-challenge/' + auth.token);
+      assert.ok(contents.startsWith(auth.token + '.')); assert.equal(contents.length, auth.token.length + 44);
+    }
+    return ca.fetch(url, options);
+  } }); t.after(() => f.php.exit()); f.configure();
+  assert.equal((await f.request('directory', { environment: 'production' }, http)).body.terms, termsUrl);
+  const first = await f.request('issue', issueBody, http);
+  assert.equal(first.status, 200, first.raw + first.errors); assert.equal(first.body.reused, false);
+  assert.equal(first.body.certificate.match(/BEGIN CERTIFICATE/g).length, 2);
+  assert.match(first.body.privateKey, /BEGIN (?:RSA )?PRIVATE KEY/);
+  const record = first.body.record;
+  const key = f.php.readFileAsText('/site/' + record.privateKeyFile).slice(f.guard.length);
+  assert.equal(first.body.privateKey, key);
+  const leaf = new X509Certificate(first.body.certificate);
+  assert.ok(leaf.checkPrivateKey(createPrivateKey(key)));
+  assert.equal(leaf.checkHost('example.com'), 'example.com'); assert.equal(leaf.checkHost('www.example.com'), 'www.example.com');
+  const protectedResponse = await f.php.runStream({ scriptPath: '/site/' + record.privateKeyFile });
+  assert.equal(await protectedResponse.httpStatusCode, 404); assert.equal(await protectedResponse.stdoutText, '');
+  assert.equal(f.php.listFiles('/site/.well-known/acme-challenge').length, 0);
+  assert.equal((await f.request('status', null, { ...http, headers: { Cookie: '' } })).body.records.length, 0);
+  const denied = await f.request('result', { id: record.id }, { ...http, headers: { Cookie: '' } });
+  assert.equal(denied.status, 403); assert.ok(!denied.raw.includes(key));
+  const reopened = await f.request('result', { id: record.id }, http);
+  assert.equal(reopened.body.certificate, first.body.certificate); assert.equal(reopened.body.privateKey, key);
+  const status = (await f.request('status', null, http)).body;
+  assert.equal(status.records.length, 1); assert.equal(status.agreedTerms.production, termsUrl);
+  const repeat = await f.request('renew', { id: record.id, termsAgreed: true, termsUrl }, http);
+  assert.equal(repeat.body.reused, true); assert.equal(ca.finalizeCount, 1);
+  const saved = JSON.parse(f.php.readFileAsText('/site/ssl-helper.config.php').slice(f.guard.length));
+  saved.records[record.id].renewAt = Math.floor(Date.now() / 1000) - 1;
+  f.php.writeFile('/site/ssl-helper.config.php', f.guard + JSON.stringify(saved));
+  const renewed = await f.request('renew', { id: record.id, termsAgreed: true, termsUrl }, http);
+  assert.equal(renewed.status, 200, renewed.raw + renewed.errors); assert.equal(renewed.body.reused, false);
+  assert.equal(ca.finalizeCount, 2); assert.equal(ca.accounts.size, 1);
+  assert.notEqual(renewed.body.record.privateKeyFile, record.privateKeyFile);
+  const newKey = f.php.readFileAsText('/site/' + renewed.body.record.privateKeyFile).slice(f.guard.length);
+  assert.equal(renewed.body.privateKey, newKey);
+  assert.notEqual(newKey, key); assert.ok(new X509Certificate(renewed.body.certificate).checkPrivateKey(createPrivateKey(newKey)));
+  assert.equal(f.php.readFileAsText('/site/' + record.privateKeyFile).slice(f.guard.length), key);
+  assert.ok(ca.signatureCount > 12);
+});
+
+test('PHP rejects arbitrary endpoints/domains and checks current terms before creating a certificate order', async t => {
+  const ca = await new MockCA().init(); const seen = [];
+  const f = await phpFixture({ transport: async (url, options) => { seen.push(url); return ca.fetch(url, options); } }); t.after(() => f.php.exit()); f.configure();
+  assert.equal((await f.request('directory', { environment: 'staging' }, http)).status, 400);
+  assert.equal((await f.request('issue', { ...issueBody, environment: 'staging' }, http)).status, 400);
+  for (const input of [ ['*.example.com'], ['http://example.com'], ['127.0.0.1'], ['example.com/../../'], ['example.com;exec'] ]) assert.equal((await f.request('issue', { ...issueBody, domains: input }, http)).status, 400);
+  assert.equal((await f.request('issue', { ...issueBody, termsAgreed: false }, http)).status, 400);
+  assert.equal((await f.request('issue', { ...issueBody, termsUrl: 'https://example.com/terms' }, http)).status, 409);
+  assert.equal(ca.orders.size, 0);
+  const forbidden = await phpFixture({ transport: async url => {
+    assert.equal(new URL(url).hostname, 'acme-v02.api.letsencrypt.org');
+    return ca.response({ newNonce: 'http://127.0.0.1/internal', newAccount: 'http://127.0.0.1/internal', newOrder: 'http://127.0.0.1/internal', meta: { termsOfService: termsUrl } });
+  } }); t.after(() => forbidden.php.exit()); forbidden.configure();
+  const blocked = await forbidden.request('issue', issueBody, http);
+  assert.equal(blocked.status, 502); assert.ok(!blocked.raw.includes('PRIVATE KEY'));
+  assert.ok(seen.every(url => new URL(url).protocol === 'https:'));
+});
+
+test('Other websites retain HTTP order/key across requests; guided completion and renewal save matching results', async t => {
+  const ca = await new MockCA().init();
+  const f = await phpFixture({ transport: ca.fetch }); t.after(() => f.php.exit()); f.configure();
+  const begin = await f.request('issue', { ...issueBody, domains: ['other.example.com'], target: 'other', method: 'http-01' }, http);
+  assert.equal(begin.status, 200, begin.raw + begin.errors); assert.equal(begin.body.pending, true);
+  assert.equal(begin.body.privateKey, undefined); assert.equal(begin.body.resources.length, 1);
+  assert.equal(begin.body.resources[0].url, 'http://other.example.com/.well-known/acme-challenge/' + begin.body.resources[0].name);
+  assert.equal(f.php.fileExists('/site/.well-known'), false);
+  const id = begin.body.record.id;
+  assert.equal((await f.request('status', null, http)).body.records[0].pending, true);
+  const resumed = await f.request('pending', { id }, http);
+  assert.deepEqual(resumed.body.resources, begin.body.resources);
+  assert.equal((await f.request('pending', { id }, { ...http, headers: { Cookie: '' } })).status, 403);
+  assert.equal((await f.request('complete', { id, termsAgreed: true, termsUrl }, http)).status, 400);
+  const first = await f.request('complete', { id, confirmed: true, termsAgreed: true, termsUrl }, http);
+  assert.equal(first.status, 200, first.raw + first.errors);
+  assert.ok(new X509Certificate(first.body.certificate).checkPrivateKey(createPrivateKey(first.body.privateKey)));
+  assert.equal(first.body.record.target, 'other'); assert.equal(first.body.record.method, 'http-01');
+  assert.equal((await f.request('status', null, http)).body.records[0].pending, undefined);
+  const saved = JSON.parse(f.php.readFileAsText('/site/ssl-helper.config.php').slice(f.guard.length));
+  saved.records[id].renewAt = Math.floor(Date.now() / 1000) - 1;
+  f.php.writeFile('/site/ssl-helper.config.php', f.guard + JSON.stringify(saved));
+  const renewal = await f.request('renew', { id, termsAgreed: true, termsUrl }, http);
+  assert.equal(renewal.body.pending, true, renewal.raw + renewal.errors);
+  const renewed = await f.request('complete', { id, confirmed: true, termsAgreed: true, termsUrl }, http);
+  assert.equal(renewed.status, 200, renewed.raw + renewed.errors);
+  assert.notEqual(first.body.privateKey, renewed.body.privateKey); assert.equal(ca.finalizeCount, 2);
+  ca.cachedAuthorization = true;
+  const cachedConfig = JSON.parse(f.php.readFileAsText('/site/ssl-helper.config.php').slice(f.guard.length));
+  cachedConfig.records[id].renewAt = Math.floor(Date.now() / 1000) - 1;
+  f.php.writeFile('/site/ssl-helper.config.php', f.guard + JSON.stringify(cachedConfig));
+  const cached = await f.request('renew', { id, termsAgreed: true, termsUrl }, http);
+  assert.equal(cached.status, 200, cached.raw + cached.errors); assert.equal(cached.body.pending, undefined);
+  assert.ok(cached.body.certificate); assert.equal(ca.finalizeCount, 3);
+});
+
+test('Other websites support DNS including wildcard/base-domain TXT values and independent domain records', async t => {
+  const ca = await new MockCA().init();
+  const f = await phpFixture({ transport: ca.fetch }); t.after(() => f.php.exit()); f.configure();
+  const begun = await f.request('issue', { ...issueBody, domains: ['*.example.com', 'example.com'], method: 'dns-01', target: 'other' }, http);
+  assert.equal(begun.status, 200, begun.raw + begun.errors); assert.equal(begun.body.resources.length, 2);
+  assert.ok(begun.body.resources.every(resource => resource.name === '_acme-challenge.example.com'));
+  assert.notEqual(begun.body.resources[0].content, begun.body.resources[1].content);
+  const result = await f.request('complete', { id: begun.body.record.id, confirmed: true, termsAgreed: true, termsUrl }, http);
+  assert.equal(result.status, 200, result.raw + result.errors);
+  assert.ok(new X509Certificate(result.body.certificate).checkPrivateKey(createPrivateKey(result.body.privateKey)));
+  const second = await f.request('issue', { ...issueBody, domains: ['independent.example.com'], target: 'other', method: 'dns-01' }, http);
+  assert.notEqual(second.body.record.id, result.body.record.id);
+  assert.equal((await f.request('status', null, http)).body.records.length, 2);
+  ca.invalidChallenge = true;
+  const invalid = await f.request('complete', { id: second.body.record.id, confirmed: true, termsAgreed: true, termsUrl }, http);
+  assert.equal(invalid.status, 422, invalid.raw + invalid.errors); assert.equal(invalid.body.invalidOrder, true);
+  ca.invalidChallenge = false;
+  const restarted = await f.request('issue', { ...issueBody, domains: ['independent.example.com'], target: 'other', method: 'dns-01', restart: true }, http);
+  assert.notEqual(restarted.body.resources[0].content, second.body.resources[0].content);
+  const recovered = await f.request('complete', { id: restarted.body.record.id, confirmed: true, termsAgreed: true, termsUrl }, http);
+  assert.equal(recovered.status, 200, recovered.raw + recovered.errors);
+});

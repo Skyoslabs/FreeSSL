@@ -1,0 +1,42 @@
+name: 使用问题
+description: 报告申请、验证、续期或页面的问题
+title: "[问题] "
+body:
+  - type: markdown
+    attributes:
+      value: "请勿公开密码、Cookie、运行配置、私钥或证书包；域名可以用 example.com 代替。"
+  - type: input
+    id: version
+    attributes:
+      label: Free SSL 版本
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 使用方式
+      options:
+        - PHP 本站文件验证
+        - PHP 其他网站文件验证
+        - PHP DNS 验证
+        - 电脑 HTML / 无 PHP 模式
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 浏览器与 PHP 版本
+      placeholder: Chrome 版本、PHP 版本（没有 PHP 就填无）
+  - type: textarea
+    id: steps
+    attributes:
+      label: 怎么操作时出现问题？
+      description: 写清操作步骤、预期结果和实际结果。
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: 页面报错或截图
+      description: 只提供必要报错，截图遮住敏感内容。

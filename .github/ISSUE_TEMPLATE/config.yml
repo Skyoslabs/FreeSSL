@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用说明
+    url: https://github.com/Skyoslabs/FreeSSL/blob/main/docs/usage.md
+    about: 安装、验证、续期与忘记密码的处理方法
+  - name: 私密漏洞报告
+    url: https://github.com/Skyoslabs/FreeSSL/security/advisories/new
+    about: 安全漏洞不要在公开 Issue 报告

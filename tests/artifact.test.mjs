@@ -1,0 +1,30 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { unzipSync } from 'fflate';
+const load = name => readFile(new URL('../' + name, import.meta.url), 'utf8');
+test('Built HTML has an exact CSP, no replaced minifier symbols, complete DOM bindings and embedded licenses', async () => {
+  const page = await load('freessl.html'), app = await load('src/app.js');
+  const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const digest = createHash('sha256').update(script).digest('base64');
+  assert.ok(page.includes("script-src 'sha256-" + digest + "'"));
+  assert.ok(!page.includes('__BUNDLE__')); assert.ok(!page.includes('TEMPLATE_NOTICE_START'));
+  const { version } = JSON.parse(await load('package.json'));
+  assert.ok(page.includes('<meta name="version" content="' + version + '">'));
+  assert.ok(page.includes('Free SSL v' + version)); assert.ok(!page.includes('__APP_VERSION__'));
+  assert.ok(!/<script\s+[^>]*src=/.test(page));
+  const ids = [...page.matchAll(/ id="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const [, id] of app.matchAll(/\$\('([^']+)'\)/g)) assert.ok(ids.includes(id), 'Missing DOM binding: ' + id);
+  assert.ok(page.includes('MIT License')); assert.ok(page.includes('Stefan Körfgen'));
+});
+test('One installer has matching HTML/PHP and the user README, without development notes or runtime state', async () => {
+  const archive = await readFile(new URL('../dist/freessl.zip', import.meta.url));
+  const files = unzipSync(archive);
+  assert.deepEqual(Object.keys(files).sort(), ['freessl.html', 'freessl.php', 'readme.md'].sort());
+  assert.ok(Object.keys(files).every(name => /^[a-z0-9.-]+$/.test(name)), 'Installer names must be ASCII for hosting-panel extraction');
+  for (const name of Object.keys(files)) assert.equal(new TextDecoder().decode(files[name]), await load(name === 'readme.md' ? 'docs/usage.md' : name));
+  assert.ok(!new TextDecoder().decode(files['readme.md']).includes('npm ci'));
+  assert.ok(!new TextDecoder().decode(files['freessl.php']).includes('post_message_to_js'));
+});
