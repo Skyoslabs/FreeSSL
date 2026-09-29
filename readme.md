@@ -6,7 +6,9 @@
 
 通过网页申请和管理免费的 **Let’s Encrypt SSL 证书**，不用命令行。项目文件统一使用小写 `freessl` 命名。
 
-当前版本：**v1.0.0** · [下载安装包](https://github.com/Skyoslabs/FreeSSL/releases/latest/download/freessl.zip) · [版本记录](changelog.md)
+最新公开版本：**v1.0.0** · [下载安装包](https://github.com/Skyoslabs/FreeSSL/releases/latest/download/freessl.zip) · [版本记录](changelog.md)
+
+当前源码与本地构建为 **v1.1.0**，新增证书条目删除，安装包尚未发布到 Release。
 
 ![自动检查](https://github.com/Skyoslabs/FreeSSL/actions/workflows/ci.yml/badge.svg)
 
@@ -28,6 +30,7 @@
 - 为其他网站申请证书，按提示完成文件或 DNS 验证；本站也可以主动选 DNS。
 - 支持普通域名、泛域名、多域名，以及 RSA 2048 / ECDSA P-256。
 - 按域名管理证书，自动保存 PEM 和 KEY，支持复制、下载和续期。
+- 删除不再使用的证书记录或待验证申请，保留同域名下的其他记录。
 - 首次自设密码；PHP 忘记密码时，只删除自动生成的 `freessl-password.php`，重新打开页面设置新密码，证书和记录保留。
 
 ## 运行方式

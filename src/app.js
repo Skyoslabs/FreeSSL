@@ -1,7 +1,7 @@
 import { connect, createSession, challengeResources, issueCertificate, normalizeDomains, readOrder, installNetworkGuard } from './core.js';
 import { zipSync, strToU8 } from 'fflate';
 import { onlineContext, probeOnline, placeOnline, onlineRequest } from './online.js';
-import { localReady, localStatus, setLocalPassword, loginLocal, logoutLocal, saveLocalCertificate } from './local.js';
+import { localReady, localStatus, setLocalPassword, loginLocal, logoutLocal, saveLocalCertificate, deleteLocalCertificate } from './local.js';
 
 installNetworkGuard();
 const $ = id => document.getElementById(id);
@@ -114,10 +114,30 @@ function renderSavedRecords() {
           else renderLocalRecord(record);
         })); actions.append(retrieve);
       }
+      const remove = element('button', '删除', 'ghost danger'); remove.type = 'button';
+      remove.addEventListener('click', () => deleteRecord(record)); actions.append(remove);
       row.append(actions); card.append(row);
     }
     $('saved-list').append(card);
   }
+}
+async function deleteRecord(record) {
+  if (busy || !confirm('确认删除“' + record.domains.join('、') + '”的这条记录？\n保存的证书和待验证申请会移除，网站已安装的证书及已下载的文件不受影响。')) return;
+  await run(async () => {
+    let message = '已删除这条记录。';
+    if (helperStatus?.capable) {
+      const result = await onlineRequest(online, 'delete', { id: record.id });
+      helperStatus.records = result.records; message = result.message || message;
+    } else await deleteLocalCertificate(record.id);
+    if (session?.id === record.id) {
+      session = null; resources = []; invalid = false;
+      $('cert-output').value = ''; $('key-output').value = '';
+      $('resource-list').replaceChildren(); $('manual-resource-list').replaceChildren();
+      $('manual-files').hidden = true; $('manual-files').open = false; $('confirmed').checked = false;
+      $('setup-card').classList.remove('completed'); step(1);
+    }
+    renderSavedRecords(); showView('certificates'); announce(message); toast(message);
+  }, '正在删除记录…');
 }
 function renderLocalRecord(record) {
   session = { ...record, domain: record.domains[0], validity: { notBefore: new Date(record.notBefore * 1000), notAfter: new Date(record.notAfter * 1000) } };
@@ -339,7 +359,7 @@ async function completeIssue() {
       status === 'pending' ? 'Let’s Encrypt 正在验证域名，通常需要几秒到几分钟…' :
       status === 'finalizing' ? '域名验证已通过，正在提交证书签发请求…' : '正在等待 Let’s Encrypt 签发证书…') });
     renderResult(result);
-    await saveLocalCertificate(session, termsUrl); renderSavedRecords();
+    const saved = await saveLocalCertificate(session, termsUrl); session.id = saved.id; renderSavedRecords();
 }
 function renderResult(result) {
   showView('certificates'); step(4); $('result-card').hidden = false; $('challenge-card').hidden = true;

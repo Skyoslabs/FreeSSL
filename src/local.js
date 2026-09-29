@@ -56,6 +56,13 @@ export async function loginLocal(password) {
   } catch { throw new Error('密码不正确，请重试。'); }
 }
 export function logoutLocal() { state = null; key = null; }
+export async function deleteLocalCertificate(id) {
+  if (!state || !key) throw new Error('请先登录再删除证书。');
+  if (!state.records.some(record => record.id === id)) throw new Error('没有找到这条证书记录。');
+  const previous = state;
+  state = { ...state, records: state.records.filter(record => record.id !== id) };
+  try { await persist(); } catch (error) { state = previous; throw error; }
+}
 export async function saveLocalCertificate(session, termsUrl) {
   if (!state || !key) throw new Error('请先登录再保存证书。');
   const id = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode([session.environment, session.keyAlgorithm, ...[...session.domains].sort()].join('|')))), byte => byte.toString(16).padStart(2, '0')).join('');

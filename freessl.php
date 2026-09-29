@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-// Free SSL v1.0.0
+// Free SSL v1.1.0
 /*
 MIT License
 
@@ -1583,7 +1583,7 @@ if ($action === 'directory') {
         reply(200, ['ok' => true, 'terms' => $terms]);
     } catch (Throwable $error) { fail(502, '无法连接官方证书服务，请检查服务器网络和 CA 信任配置。'); }
 }
-if (!in_array($action, ['set-password', 'login', 'logout', 'write', 'issue', 'renew', 'result', 'complete', 'pending'], true)) fail(405, '不支持这个操作。');
+if (!in_array($action, ['set-password', 'login', 'logout', 'write', 'issue', 'renew', 'result', 'complete', 'pending', 'delete'], true)) fail(405, '不支持这个操作。');
 if (!in_array($action, ['set-password', 'login', 'logout'], true)) {
     if (!$configured) fail(503, '首次使用，请先设置密码。');
     if (!$signedIn) fail(403, '请先输入密码登录。');
@@ -1634,6 +1634,27 @@ if ($action === 'pending') {
     $id = $body['id'] ?? ''; if (!is_string($id) || !isset($config['pending'][$id])) fail(404, '没有找到待验证的申请。');
     environment($config['pending'][$id]);
     reply(200, pendingData($config['pending'][$id]));
+}
+if ($action === 'delete') {
+    $id = $body['id'] ?? '';
+    if (!is_string($id) || preg_match('/\A[0-9a-f]{64}\z/D', $id) !== 1) fail(400, '证书记录编号无效。');
+    if (!isset($config['records'][$id]) && !isset($config['pending'][$id])) fail(404, '没有找到这条证书记录。');
+    $files = [];
+    foreach (['certificateFile', 'privateKeyFile'] as $field) {
+        $name = $config['records'][$id][$field] ?? null;
+        if ($name === null) continue;
+        if (!is_string($name) || preg_match('/\Assl-(?:certificate|private-key)-[0-9a-f]{16}-[0-9a-f]{12}\.php\z/D', $name) !== 1) fail(409, '证书文件记录异常，请在主机面板检查。');
+        ordinary($root . '/' . $name);
+        $shared = false;
+        foreach ($config['records'] ?? [] as $otherId => $other) {
+            if ($otherId !== $id && in_array($name, [$other['certificateFile'] ?? null, $other['privateKeyFile'] ?? null], true)) $shared = true;
+        }
+        if (!$shared) $files[] = $root . '/' . $name;
+    }
+    unset($config['records'][$id], $config['pending'][$id]); saveConfig($configPath, $config);
+    $cleaned = true;
+    foreach ($files as $path) if (file_exists($path) && !@unlink($path)) $cleaned = false;
+    reply(200, ['ok' => true, 'records' => records($config), 'message' => $cleaned ? '已删除这条记录。' : '条目已删除，部分证书文件未能清理，请检查程序目录的删除权限。']);
 }
 if (!$capable) fail(503, 'PHP 环境不能自动签发，请使用本地引导。');
 $env = environment($body);
